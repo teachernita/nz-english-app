@@ -1,4 +1,5 @@
 import json
+import random
 import re
 from babel import Locale
 import google.generativeai as genai
@@ -227,6 +228,7 @@ if "analysis" in st.session_state:
               {{
                 "sentence": "Sentence with ___ representing the gap.",
                 "answer": "correct_word",
+                "distractors": ["clearly_incorrect_option_1", "clearly_incorrect_option_2"],
                 "explanation": "Short rule explanation in English and in {language}"
               }}
             ]
@@ -235,9 +237,22 @@ if "analysis" in st.session_state:
                 try:
                     raw_text = generate_ai_response(ex_prompt)
                     clean_json = re.sub(r"```json\s*|\s*```", "", raw_text.strip())
-                    st.session_state["exercise_json"] = json.loads(clean_json)
+                    exercises = json.loads(clean_json)
+
+                    # Shuffle option order once during generation
+                    for item in exercises:
+                        opts = [item["answer"]] + item.get(
+                            "distractors", ["", ""]
+                        )
+                        random.shuffle(opts)
+                        item["options"] = opts
+
+                    st.session_state["exercise_json"] = exercises
                 except Exception:
-                    st.error("Error generating exercise format. Please click the button again.")
+                    st.error(
+                        "Error generating exercise format. Please click the"
+                        " button again."
+                    )
 
     # Generate New Writing Prompts Button
     with col2:
@@ -254,17 +269,22 @@ if "analysis" in st.session_state:
                 except Exception as e:
                     st.error(f"API Error: {e}")
 
-# Render Interactive Gap-Fill Form
+# Render Multiple-Choice Gap-Fill Form
 if "exercise_json" in st.session_state:
     st.markdown("---")
-    st.info("### ✍️ Interactive Gap-Fill Practice")
-    st.write("Fill in the blanks with the correct missing words:")
+    st.info("### ✍️ Interactive Practice")
+    st.write("Select the correct missing word for each sentence:")
 
     with st.form("gapfill_form"):
         student_answers = []
         for i, item in enumerate(st.session_state["exercise_json"]):
             st.write(f"**Sentence {i+1}:** {item['sentence']}")
-            ans = st.text_input(f"Your answer for sentence {i+1}:", key=f"ans_{i}")
+            ans = st.radio(
+                f"Choose option for sentence {i+1}:",
+                options=item.get("options", []),
+                key=f"ans_{i}",
+                index=None,
+            )
             student_answers.append(ans)
 
         submitted = st.form_submit_button("Check Answers")
@@ -272,15 +292,18 @@ if "exercise_json" in st.session_state:
         if submitted:
             st.markdown("#### Results:")
             for i, item in enumerate(st.session_state["exercise_json"]):
-                user_ans = student_answers[i].strip().lower()
-                target_ans = item["answer"].strip().lower()
+                user_ans = student_answers[i]
+                target_ans = item["answer"]
 
-                if user_ans == target_ans:
+                if user_ans is None:
+                    st.warning(f"**Sentence {i+1}:** No option selected.")
+                elif user_ans.strip().lower() == target_ans.strip().lower():
                     st.success(f"**Sentence {i+1}:** ✅ Correct!")
                 else:
                     st.error(
-                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct Answer:**"
-                        f" `{item['answer']}`\n- **Rule:** {item['explanation']}"
+                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct"
+                        f" Answer:** `{item['answer']}`\n- **Rule:**"
+                        f" {item['explanation']}"
                     )
 
 # Display New Writing Prompts & Secondary AI Check
