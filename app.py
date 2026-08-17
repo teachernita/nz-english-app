@@ -222,13 +222,13 @@ if "analysis" in st.session_state:
             DO NOT use the exact sentences from the student text. Extrapolate and create distinct, new example sentences.
             
             OUTPUT REQUIREMENT:
-            Return ONLY a raw JSON list containing 10 objects. Do not write intro text, markdown formatting, thoughts, or scratchpads.
+            Return ONLY a JSON array containing 10 objects. Do not write intro text or markdown formatting.
             Structure:
             [
               {{
                 "sentence": "Sentence with ___ representing the gap.",
                 "answer": "correct_word",
-                "distractors": ["clearly_incorrect_option_1", "clearly_incorrect_option_2"],
+                "distractors": ["incorrect_option_1", "incorrect_option_2"],
                 "explanation": "Short rule explanation in English and in {language}"
               }}
             ]
@@ -236,23 +236,25 @@ if "analysis" in st.session_state:
             with st.spinner("Creating interactive exercise..."):
                 try:
                     raw_text = generate_ai_response(ex_prompt)
-                    clean_json = re.sub(r"```json\s*|\s*```", "", raw_text.strip())
+                    
+                    # Robust extraction of raw JSON array using regex
+                    json_match = re.search(r"\[.*\]", raw_text, re.DOTALL)
+                    if json_match:
+                        clean_json = json_match.group(0)
+                    else:
+                        clean_json = raw_text
+
                     exercises = json.loads(clean_json)
 
-                    # Shuffle option order once during generation
+                    # Randomize answer options order
                     for item in exercises:
-                        opts = [item["answer"]] + item.get(
-                            "distractors", ["", ""]
-                        )
+                        opts = [item["answer"]] + item.get("distractors", [])
                         random.shuffle(opts)
                         item["options"] = opts
 
                     st.session_state["exercise_json"] = exercises
-                except Exception:
-                    st.error(
-                        "Error generating exercise format. Please click the"
-                        " button again."
-                    )
+                except Exception as e:
+                    st.error(f"Error parsing exercises: {e}")
 
     # Generate New Writing Prompts Button
     with col2:
@@ -301,9 +303,7 @@ if "exercise_json" in st.session_state:
                     st.success(f"**Sentence {i+1}:** ✅ Correct!")
                 else:
                     st.error(
-                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct"
-                        f" Answer:** `{item['answer']}`\n- **Rule:**"
-                        f" {item['explanation']}"
+                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct Answer:** `{item['answer']}`\n- **Rule:** {item['explanation']}"
                     )
 
 # Display New Writing Prompts & Secondary AI Check
