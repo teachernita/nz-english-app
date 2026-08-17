@@ -26,22 +26,26 @@ st.write(
 )
 
 
-# --- HIGH-QUOTA GEMINI GENERATION WRAPPER ---
+# --- DYNAMIC & RESILIENT GEMINI GENERATION WRAPPER ---
 def generate_ai_response(prompt):
-    """Executes prompt against Google Gemini API using high-quota stable models (1500 req/day)."""
+    """Executes prompt against Google Gemini API with fallback and dynamic model discovery."""
     api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("GEMINI_API_KEY is missing from Streamlit Secrets.")
 
     genai.configure(api_key=api_key)
 
-    # Models with high daily free limits
+    # Preferred active models ordered by recency
     candidate_models = [
+        "gemini-2.5-flash",
         "gemini-2.0-flash",
+        "gemini-flash-latest",
         "gemini-1.5-flash",
     ]
 
     last_exception = None
+
+    # 1. Try preferred standard aliases first
     for model_name in candidate_models:
         try:
             model = genai.GenerativeModel(model_name)
@@ -52,10 +56,29 @@ def generate_ai_response(prompt):
             last_exception = e
             continue
 
+    # 2. Fallback: Query active supported models directly from your API key
+    try:
+        available_models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in m.supported_generation_methods
+        ]
+        for model_name in available_models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                last_exception = e
+                continue
+    except Exception as e:
+        last_exception = e
+
     if last_exception:
         raise last_exception
     else:
-        raise RuntimeError("No suitable Gemini model found.")
+        raise RuntimeError("No active Gemini models supported for your API key.")
 
 
 # --- CLDR LANGUAGE GENERATOR ---
@@ -298,9 +321,7 @@ if "exercise_json" in st.session_state:
                     st.success(f"**Sentence {i+1}:** ✅ Correct!")
                 else:
                     st.error(
-                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct"
-                        f" Answer:** `{item['answer']}`\n- **Rule:**"
-                        f" {item['explanation']}"
+                        f"**Sentence {i+1}:** ❌ Incorrect.\n- **Correct Answer:** `{item['answer']}`\n- **Rule:** {item['explanation']}"
                     )
 
 # Display New Writing Prompts & Secondary AI Check
